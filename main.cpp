@@ -95,7 +95,7 @@ void render() {
 	
 	// std::cout<<currentCursorRow + 1 << "," << currentCursorCol + 1;
 
-	std::cout << "\033[" << currentCursorRow << ";"<< currentCursorCol << "H";
+	std::cout << "\033[" << currentCursorRow + currentLine << ";"<< currentCursorCol << "H";
 
 	char _cursor = ' ';
 
@@ -130,7 +130,7 @@ void writeAtCoords(int row, int col, const std::string& text) {
 }
 
 void renderCursorUpdate() {
-	std::cout << "\033[" << currentCursorRow + 1 << ";1H";
+	std::cout << "\033[" << currentCursorRow + 1 << ";"<< currentCursorCol + 1 <<"H";
 	
 	char _cursor = ' ';
 	
@@ -230,6 +230,7 @@ void ioUpdate() {
 LRESULT CALLBACK KeyboardListner(int nCode, WPARAM wParam, LPARAM lParam) {
 	int tmpCurr = currentLine;
 	int tmpCursorRow = currentCursorRow;
+	int tmpCursorCol = currentCursorCol;
 	if (nCode == HC_ACTION) {
 		auto* key = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
@@ -240,6 +241,12 @@ LRESULT CALLBACK KeyboardListner(int nCode, WPARAM wParam, LPARAM lParam) {
 				} else {
 					currentLine = currentLine > 0 ? currentLine - 1 : currentLine;
 				}
+
+				if ((currentCursorRow + currentLine) >= fileContents.size()) {
+					currentCursorCol = 0;
+				} else if (fileContents[currentCursorRow + currentLine].size() < currentCursorCol) {
+					currentCursorCol = fileContents[currentCursorRow + currentLine].size();
+				}
 			}
 			if (key->vkCode == VK_DOWN) {
 				if (currentCursorRow < height - 2) {
@@ -247,15 +254,38 @@ LRESULT CALLBACK KeyboardListner(int nCode, WPARAM wParam, LPARAM lParam) {
 				} else {
 					currentLine = currentLine > (fileContents.size() - height/2) ? currentLine : currentLine + 1;
 				}
+
+				if ((currentCursorRow + currentLine) >= fileContents.size()) {
+					currentCursorCol = 0;
+				} else if (fileContents[currentCursorRow + currentLine].size() < currentCursorCol) {
+					currentCursorCol = fileContents[currentCursorRow + currentLine].size();
+				}
+
+			}
+			if (key->vkCode == VK_RIGHT) {
+				if ((currentCursorRow + currentLine) >= fileContents.size()) {
+				} else if (fileContents[currentCursorRow + currentLine].size() <= currentCursorCol) {
+					currentCursorCol = fileContents[currentCursorRow + currentLine].size() - 1;
+					currentCursorCol = std::max(currentCursorCol, 0);
+				} else {
+					currentCursorCol++;
+				}
+			}
+			if (key->vkCode == VK_LEFT) {
+				if ((currentCursorRow + currentLine) >= fileContents.size()) {
+				} else if (currentCursorCol > 0) {
+					currentCursorCol--;
+				}
 			}
 		}
 	}
 
-	if (tmpCurr == currentLine || tmpCursorRow != currentCursorRow) {
-		flushCursor(tmpCursorRow, 0);
-		writeAtCoords(height, 0, std::to_string(currentCursorRow) + "," + std::to_string(currentCursorCol));
+	if (tmpCurr == currentLine || tmpCursorRow != currentCursorRow || tmpCursorCol != currentCursorCol) {
+		flushCursor(tmpCursorRow, tmpCursorCol);
+		writeAtCoords(height, 0, std::to_string(currentCursorRow + currentLine) + "," + std::to_string(currentCursorCol));
 		renderCursorUpdate();
 	} else if (tmpCurr != currentLine) {
+		writeAtCoords(height, 0, std::to_string(currentCursorRow + currentLine) + "," + std::to_string(currentCursorCol));
 		render();
 	}
 
