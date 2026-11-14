@@ -1,9 +1,15 @@
 #include <iostream>
 #include <windows.h>
-#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <vector>
+
+int width = 0, height = 0;
+int currentLine = 0;
+int reservedLines = 1;
+std::vector<std::string> fileContents;
 
 class InvalidParameterException : public std::exception {
 	public:
@@ -33,6 +39,45 @@ class FileOpeningException : public std::exception {
 		}
 };
 
+bool isValidFilename(const std::string& filename);
+void validateFile(const std::string& filename);
+void createOrGetFile(const std::string& filename, std::vector<std::string>& fileContents);
+void screenDimUpdate();
+void render();
+
+int main(int argc, char* argv[]) {
+	if (argc != 2) {
+		throw InvalidParameterException();
+	}
+	if (argv[1] == "") {
+		throw InvalidFileNameException();
+	}
+
+	validateFile(argv[1]);
+
+	createOrGetFile(argv[1], fileContents);
+
+	std::thread windowUpdateWatcher(screenDimUpdate);
+	
+	windowUpdateWatcher.join();
+
+	return 0;
+}
+
+void render() {
+	std::cout<<"rendering...";
+	int n = fileContents.size();
+
+	system("cls");
+	for (int i = currentLine; i< height -  reservedLines; i++) {
+		if (i >= n) {
+			std::cout<< "~\n";
+		} else {
+			std::cout<< fileContents[i] << '\n';
+		}
+	}
+}
+
 bool isValidFilename(const std::string& filename) {
 	if (filename.empty() || filename == "." || filename == "..") {
 		return false;
@@ -60,7 +105,7 @@ void validateFile(const std::string& filename) {
 	}
 }
 
-std::string createOrGetFile(const std::string& filename) {
+void createOrGetFile(const std::string& filename, std::vector<std::string>& fileContents) {
 	std::fstream file(filename, std::ios::in | std::ios::out | std::ios::app);
 	
 	if (!file.is_open()) {
@@ -69,39 +114,29 @@ std::string createOrGetFile(const std::string& filename) {
 
 	std::string line;
 	while (std::getline(file, line)) {
-		std::cout<< line << '\n';
+		// std::cout<< line << '\n';
+		fileContents.push_back(line);
 	}
 
 	file.close();
-
-	return line;
 }
 
-int main(int argc, char* argv[]) {
-	if (argc != 2) {
-		throw InvalidParameterException();
-	}
-	if (argv[1] == "") {
-		throw InvalidFileNameException();
-	}
-
-	validateFile(argv[1]);
-
-	std::string fileContents = createOrGetFile(argv[1]);
-
-	std::cout<<fileContents;	
-
+void screenDimUpdate() {
 	CONSOLE_SCREEN_BUFFER_INFO csbi;
-	
-	/*
+	render();
+	bool flag = false;
 	for (;;) {
-		system("cls");
 		if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
-			int width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-			int height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
-			std::cout<< width << " X " << height << std::endl;
+			if (width != (csbi.srWindow.Right - csbi.srWindow.Left + 1) || height != (csbi.srWindow.Bottom - csbi.srWindow.Top + 1)) {
+				flag = true;
+			}
+
+			width = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+			height = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+			
+			if (flag)
+				render();
+			flag = false;
 		}
 	}
-	*/
-	return 0;
 }
