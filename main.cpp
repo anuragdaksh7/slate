@@ -12,6 +12,10 @@ int reservedLines = 1;
 int currentCursorRow = 0;
 int currentCursorCol = 0;
 std::vector<std::string> fileContents;
+// MODES:
+// 0 -> default
+// 1 -> edit
+int editorMode = 0;
 
 class InvalidParameterException : public std::exception {
 	public:
@@ -50,12 +54,15 @@ LRESULT CALLBACK KeyboardListner(int nCode, WPARAM wParam, LPARAM lParam);
 void ioUpdate();
 void renderCursorUpdate();
 void writeAtCoords(int row, int col, const std::string& text);
+std::string getModeName();
+void renderFooter();
+bool handleTextInput(WPARAM key);
 
 int main(int argc, char* argv[]) {
 	if (argc != 2) {
 		throw InvalidParameterException();
 	}
-	if (argv[1] == "") {
+	if (std::string(argv[1]).empty()) {
 		throw InvalidFileNameException();
 	}
 
@@ -83,8 +90,7 @@ void render() {
 	int n = fileContents.size();
 
 	// system("cls");
-	std::cout << "\033[2J";
-	std::cout << "\033[H";
+	std::cout << "\033[2J\033[H";
 	for (int i = currentLine; i< height + currentLine -  reservedLines; i++) {
 		if (i >= n) {
 			std::cout<< "~\n";
@@ -93,21 +99,19 @@ void render() {
 		}
 	}
 	
-	// std::cout<<currentCursorRow + 1 << "," << currentCursorCol + 1;
+	renderFooter();
 
-	std::cout << "\033[" << currentCursorRow + currentLine << ";"<< currentCursorCol << "H";
+	renderCursorUpdate();
+}
 
-	char _cursor = ' ';
+void renderFooter() {
+	std::string updateFooter(width, ' ');
+	writeAtCoords(height, 0, updateFooter);
+	writeAtCoords(height, 0, "--" + getModeName() + "--  " + std::to_string(currentCursorRow + currentLine) + "," + std::to_string(currentCursorCol));
+}
 
-	if  ((currentLine + currentCursorRow) < fileContents.size() && currentCursorCol < fileContents[currentLine].size()) {
-		_cursor = fileContents[currentLine + currentCursorRow][currentCursorCol];
-	}
-	if ((currentLine + currentCursorRow) >= fileContents.size())
-		_cursor = '~';
-
-	std::cout << "\033[7m" << _cursor << "\033[0m";
-
-	std::cout.flush();
+std::string getModeName() {
+	return editorMode == 0 ? "DEFAULT" : "WRITE";
 }
 
 void flushCursor(int cursorRow, int cursorCol) {
@@ -132,16 +136,14 @@ void writeAtCoords(int row, int col, const std::string& text) {
 void renderCursorUpdate() {
 	std::cout << "\033[" << currentCursorRow + 1 << ";"<< currentCursorCol + 1 <<"H";
 	
+	size_t idx = currentLine + currentCursorRow;
 	char _cursor = ' ';
-	
-	if ((currentLine + currentCursorRow) < fileContents.size() && currentCursorCol < fileContents[currentLine].size()) {
-		_cursor = fileContents[currentLine + currentCursorRow][currentCursorCol];
-	}
-	if ((currentLine + currentCursorRow) >= fileContents.size())
+	if (idx >= fileContents.size())
 		_cursor = '~';
+	else if (currentCursorCol < (int)fileContents[idx].size())
+		_cursor = fileContents[idx][currentCursorCol];
 
 	std::cout << "\033[7m" << _cursor << "\033[0m";
-
 	std::cout.flush();
 }
 
@@ -227,14 +229,54 @@ void ioUpdate() {
 	UnhookWindowsHookEx(hook);
 }
 
+bool handleTextInput(WPARAM key) {
+	return (key >= 'A' && key <= 'Z') ||
+	       (key >= '0' && key <= '9') ||
+	       (key == VK_SPACE) ||
+	       (key == VK_OEM_PERIOD) ||
+	       (key == VK_OEM_COMMA) ||
+	       (key == VK_OEM_MINUS) ||
+	       (key == VK_OEM_PLUS) ||
+	       (key == VK_OEM_1) ||
+	       (key == VK_OEM_2) ||
+	       (key == VK_OEM_3) ||
+	       (key == VK_OEM_4) ||
+	       (key == VK_OEM_5) ||
+	       (key == VK_OEM_6) ||
+	       (key == VK_OEM_7);
+}
+
 LRESULT CALLBACK KeyboardListner(int nCode, WPARAM wParam, LPARAM lParam) {
 	int tmpCurr = currentLine;
 	int tmpCursorRow = currentCursorRow;
 	int tmpCursorCol = currentCursorCol;
+	bool contentChanged = false;
 	if (nCode == HC_ACTION) {
 		auto* key = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
 		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+			bool isInstruction = false;
+			isInstruction = editorMode && handleTextInput(key->vkCode);
+
+			if (isInstruction) {
+				char keyChar = static_cast<char>(key->vkCode);
+				while (fileContents.size() <= (size_t)(currentCursorRow + currentLine))
+					fileContents.push_back("");
+				fileContents[currentCursorRow + currentLine].insert(currentCursorCol, 1, keyChar);
+				currentCursorCol++;
+				contentChanged = true;
+			}
+
+			if (key->vkCode == VK_ESCAPE) {
+				if (editorMode == 1) {
+					editorMode = 0;
+				} 
+			}
+			if (key->vkCode == 'I' || key->vkCode == 'A') {
+				if (editorMode == 0) {
+					editorMode = 1;
+				}
+			}
 			if (key->vkCode == VK_UP) {
 				if (currentCursorRow > 0) {
 					currentCursorRow -= 1;
@@ -252,7 +294,7 @@ LRESULT CALLBACK KeyboardListner(int nCode, WPARAM wParam, LPARAM lParam) {
 				if (currentCursorRow < height - 2) {
 					currentCursorRow += 1;
 				} else {
-					currentLine = currentLine > (fileContents.size() - height/2) ? currentLine : currentLine + 1;
+					currentLine = currentLine > std::max((int)(fileContents.size() - height/2), height / 2) ? currentLine : currentLine + 1;
 				}
 
 				if ((currentCursorRow + currentLine) >= fileContents.size()) {
@@ -280,13 +322,14 @@ LRESULT CALLBACK KeyboardListner(int nCode, WPARAM wParam, LPARAM lParam) {
 		}
 	}
 
-	if (tmpCurr == currentLine || tmpCursorRow != currentCursorRow || tmpCursorCol != currentCursorCol) {
-		flushCursor(tmpCursorRow, tmpCursorCol);
-		writeAtCoords(height, 0, std::to_string(currentCursorRow + currentLine) + "," + std::to_string(currentCursorCol));
-		renderCursorUpdate();
-	} else if (tmpCurr != currentLine) {
-		writeAtCoords(height, 0, std::to_string(currentCursorRow + currentLine) + "," + std::to_string(currentCursorCol));
+	std::string updateFooter(width, ' ');
+
+	if (contentChanged || tmpCurr != currentLine) {
 		render();
+	} else if (tmpCursorRow != currentCursorRow || tmpCursorCol != currentCursorCol) {
+		flushCursor(tmpCursorRow, tmpCursorCol);
+		renderFooter();
+		renderCursorUpdate();
 	}
 
 	return CallNextHookEx(nullptr, nCode, wParam, lParam);
